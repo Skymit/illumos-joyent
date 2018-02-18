@@ -2865,7 +2865,8 @@ pr_write_psinfo(prnode_t *pnp, uio_t *uiop)
 static int
 pr_write_lwpsinfo(prnode_t *pnp, uio_t *uiop)
 {
-	char	lwpname[PRLWPNSZ];
+	char	*lwpname = NULL;
+	kthread_t *t = NULL;
 	size_t	offset = offsetof(lwpsinfo_t, pr_lwpname);
 	int	error;
 
@@ -2878,6 +2879,8 @@ pr_write_lwpsinfo(prnode_t *pnp, uio_t *uiop)
 	if (uiop->uio_offset != offset || uiop->uio_resid != PRLWPNSZ)
 		return (0);
 
+	lwpname = kmem_alloc(THREAD_NAME_MAX, KM_SLEEP);
+
 	if ((error = uiomove(lwpname, PRLWPNSZ, UIO_WRITE, uiop)) != 0)
 		return (error);
 
@@ -2886,8 +2889,14 @@ pr_write_lwpsinfo(prnode_t *pnp, uio_t *uiop)
 	if ((error = prlock(pnp, ZNO)) != 0)
 		return (error);
 
-	/* XXX: This can block, does this cause a problem w/ prlock()? */
-	thread_setname(pnp->pr_common->prc_thread, lwpname);
+	t = pnp->pr_common->prc_thread;
+	if (t->t_name == NULL) {
+		t->t_name = lwpname;
+	} else {
+		(void) strlcpy(t->t_name, lwpname, THREAD_NAME_MAX);
+		kmem_free(lwpname, THREAD_NAME_MAX);
+	}
+
 	prunlock(pnp);
 	return (0);
 }
